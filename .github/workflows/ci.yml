@@ -47,6 +47,7 @@ jobs:
           semgrep scan \
             --config p/owasp-top-ten \
             --config p/security-audit \
+            --config semgrep-rules/docvault.yml \
             --severity ERROR \
             --error --metrics=off \
             --json-output=semgrep.json \

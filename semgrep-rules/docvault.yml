@@ -1,0 +1,45 @@
+rules:
+  - id: docvault-sql-injection-better-sqlite3
+    mode: taint
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Donnee issue de la requete HTTP concatenee dans une requete SQL
+      (better-sqlite3). Utiliser des parametres lies (?) au lieu de
+      l'interpolation. OWASP A03:2021 Injection.
+    metadata:
+      owasp: "A03:2021 - Injection"
+      cwe: "CWE-89"
+    pattern-sources:
+      - pattern: req.query
+      - pattern: req.body
+      - pattern: req.params
+    pattern-sinks:
+      - pattern: $DB.prepare(...)
+      - pattern: $DB.exec(...)
+
+  - id: docvault-react-dangerously-set-inner-html
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      dangerouslySetInnerHTML avec une valeur dynamique : risque de XSS stocke
+      (titre de document). OWASP A03:2021 Injection.
+    metadata:
+      owasp: "A03:2021 - Injection"
+      cwe: "CWE-79"
+    pattern: |
+      <$E dangerouslySetInnerHTML={{__html: $X}} />
+    pattern-not: |
+      <$E dangerouslySetInnerHTML={{__html: "..."}} />
+
+  - id: docvault-cors-reflects-any-origin
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      CORS accepte toutes les origines (origin: true) avec credentials.
+      OWASP A05:2021 Security Misconfiguration.
+    metadata:
+      owasp: "A05:2021 - Security Misconfiguration"
+      cwe: "CWE-942"
+    pattern: |
+      cors({..., origin: true, ...})
