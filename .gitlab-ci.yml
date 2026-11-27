@@ -1,0 +1,8 @@
+stages:
+  - security
+
+hello:
+  stage: security
+  image: alpine:3.20
+  script:
+    - echo "Pipeline DocVault OK"
