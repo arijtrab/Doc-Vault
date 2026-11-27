@@ -1,15 +1,15 @@
 # Politique de blocage du pipeline — DocVault
 
 **Version :** 27 novembre 2026 · **Pipeline :** `.github/workflows/ci.yml` (GitHub Actions)
-**Règle générale :** tout job de sécurité qui se termine avec un code de sortie non nul fait échouer le pipeline. Une pull request vers `main` ne peut être fusionnée que si les cinq contrôles réussissent (protection de branche, voir § 5).
+**Règle générale :** tout job de sécurité qui se termine avec un code de sortie non nul fait échouer le pipeline. Une pull request vers `main` ne peut être fusionnée que si les six vérifications (cinq contrôles, l'analyse d'image étant faite pour le backend et le frontend) réussissent : ruleset GitHub `protect-main`, actif depuis le 27/11/2026.
 
 ## 1. Contrôles et seuils
 
 | # | Contrôle | Outil (version épinglée) | Périmètre | Casse le build si… | Justification du seuil |
 |---|---|---|---|---|---|
 | 1 | Secrets | Gitleaks `v8.30.1` | Tout l'historique accessible depuis le commit testé | **au moins un secret**, quelle que soit sa nature | Un secret poussé est compromis dès le push : il doit être révoqué, ce qu'aucune gravité ne permet d'ignorer. Les valeurs sont caviardées (`--redact`) dans les journaux et le rapport. |
-| 2 | SAST | Semgrep (règles `p/owasp-top-ten`, `p/security-audit`, `semgrep-rules/docvault.yml`) | `backend`, `database`, `security`, `frontend/src` | au moins un résultat de sévérité **ERROR** | ERROR correspond aux règles à forte confiance (injection, XSS, CORS permissif). Les niveaux WARNING/INFO produisent trop de faux positifs pour bloquer sans revue ; ils restent visibles dans le rapport. |
-| 3 | Dépendances | Trivy `0.76.2` (`fs`) | `package-lock.json`, `docker/backend-runtime/package-lock.json`, dépendances de dev incluses | CVE **HIGH ou CRITICAL** avec **correctif disponible** | Une CVE corrigible ne demande qu'une mise à jour : la bloquer ne paralyse pas l'équipe. Les dépendances de dev sont incluses car React et Vite finissent dans le bundle servi aux navigateurs. |
+| 2 | SAST | Semgrep `1.186.0` (règles `p/owasp-top-ten`, `p/security-audit`, `semgrep-rules/docvault.yml`) | `backend`, `database`, `security`, `frontend/src` | au moins un résultat de sévérité **ERROR** | ERROR correspond aux règles à forte confiance (injection, XSS, CORS permissif). Les niveaux WARNING/INFO produisent trop de faux positifs pour bloquer sans revue ; ils restent visibles dans le rapport. |
+| 3 | Dépendances | Trivy `0.76.2` (`fs`) | `package-lock.json`, `docker/backend-runtime/package-lock.json`, `bun.lock`, dépendances de dev incluses | CVE **HIGH ou CRITICAL** avec **correctif disponible** | Une CVE corrigible ne demande qu'une mise à jour : la bloquer ne paralyse pas l'équipe. Les dépendances de dev sont incluses car React et Vite finissent dans le bundle servi aux navigateurs. |
 | 4 | IaC | Trivy `0.76.2` (`config`) | Dockerfiles, puis manifestes Kubernetes (4.5) | mauvaise configuration **HIGH ou CRITICAL** | Ces niveaux couvrent l'exécution en root, les secrets dans les build-args/ENV, les privilèges excessifs : exactement ce que 4.1 et 4.5 interdisent. |
 | 5 | Images | Trivy `0.76.2` (`image`, vuln + secret) | Images backend et frontend construites dans le job | CVE **HIGH ou CRITICAL** avec **correctif disponible**, ou **un secret** dans l'image | Même logique que le contrôle 3, appliquée au système d'exploitation de l'image. |
 
@@ -55,6 +55,7 @@ Les autres failles (DV-01 à DV-04, DV-11 : logique d'authentification et d'auto
 
 - Un pipeline vert signifie « aucun résultat au-dessus des seuils, avec ces règles, à cette date ». Ce n'est pas une preuve d'absence de faille : une image propre le 25/11 ne l'était plus le 27/11.
 - Le SAST ne voit pas les failles de logique (mot de passe ignoré, contrôle d'accès absent, rôle forcé).
-- Semgrep n'a analysé que partiellement 4 fichiers TSX (erreurs d'analyse sur le caractère `&` dans du texte JSX) ; une faille dans ces portions pourrait passer inaperçue.
+- Une version antérieure de Semgrep n'analysait que partiellement 4 fichiers TSX (caractère `&` dans du texte JSX) ; avec `1.186.0`, environ 100 % des lignes sont analysées. Une mise à jour de l'outil peut donc changer le périmètre réellement couvert.
+- Le dépôt contient deux fichiers de verrouillage pour le même code (`package-lock.json` et `bun.lock`). Les images sont construites avec `npm ci` ; `bun.lock` peut diverger sans que le pipeline le signale. Action prévue : ne garder qu'un seul gestionnaire de paquets.
 - Gitleaks ne détecte que les formats de secrets connus ; un mot de passe « maison » peut passer.
-- Le blocage n'est effectif que si la protection de branche impose la réussite des cinq jobs avant fusion.
+- Le blocage n'est effectif que grâce au ruleset `protect-main` (pull request obligatoire, 6 contrôles requis, force-push interdit). Conséquence : tant qu'une faille détectée par le SAST subsiste sur `main`, aucune pull request ne peut être fusionnée ; les corrections DV-06, DV-07 et DV-09 doivent donc être livrées ensemble.
