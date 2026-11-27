@@ -11,9 +11,15 @@ COPY . .
 RUN npm run build
 
 FROM nginx/nginx-unprivileged:1.30.8-alpine3.24@sha256:637c35e46af7bc0dd3d3bcf7162e004e13ab3b370fde7cd416e2ac410b5a985a AS runtime
+# Temporary exception (27/11/2026): the pinned base ships libxml2 2.13.9-r3 with six HIGH CVEs
+# (CVE-2026-11979, CVE-2026-86138/86139/86140/86142/86143), fixed in 2.13.9-r5.
+# Upgrade only this package until upstream publishes a fixed base image, then remove these lines
+# and pin the new digest. root is used only at build time; the runtime user stays 101.
+USER root
+RUN apk upgrade --no-cache libxml2
+USER 101
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist/ /usr/share/nginx/html/
-USER 101
 EXPOSE 8080
 ENTRYPOINT ["nginx"]
 CMD ["-g", "daemon off;"]

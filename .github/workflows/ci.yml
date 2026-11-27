@@ -7,7 +7,13 @@ on:
 permissions:
   contents: read
 
+# Politique de blocage : voir SECURITY-POLICY.md
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1
+
 jobs:
+  # 1/5 - Détection de secrets, avec caviardage
   gitleaks:
     name: Secrets (Gitleaks)
     runs-on: ubuntu-latest
@@ -16,14 +22,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Gitleaks - historique complet, valeurs masquees
+      - name: Gitleaks - historique de la branche testée, valeurs masquées
+        shell: bash
         run: |
-          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/repo" \
-            zricethezav/gitleaks:v8.30.1 detect -v \
+          # --log-opts=HEAD : tout l'historique accessible depuis le commit testé
+          # (sans --all, qui scannerait aussi les autres branches, dont demo/secret).
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/repo" "$GITLEAKS_IMAGE" detect -v \
             --source /repo --redact --exit-code 1 --log-opts="HEAD" \
             --report-format json --report-path /repo/gitleaks.json
-
       - name: Conserver le rapport
         if: always()
         uses: actions/upload-artifact@v4
@@ -32,17 +38,19 @@ jobs:
           path: gitleaks.json
           if-no-files-found: ignore
 
+  # 2/5 - Analyse statique du code (SAST)
   semgrep:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
     container:
-      image: semgrep/semgrep:latest
+      image: semgrep/semgrep:latest   # à épingler : remplacer latest par la version affichée par "semgrep --version"
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Semgrep - bloque sur severite ERROR
+      - name: Version de Semgrep
+        run: semgrep --version
+      - name: Semgrep - bloque sur sévérité ERROR
         run: |
           semgrep scan \
             --config p/owasp-top-ten \
@@ -52,11 +60,89 @@ jobs:
             --error --metrics=off \
             --json-output=semgrep.json \
             backend database security frontend/src
-
       - name: Conserver le rapport
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-report
           path: semgrep.json
+          if-no-files-found: ignore
+
+  # 3/5 - Analyse des dépendances (lockfiles npm)
+  dependencies:
+    name: Dépendances (Trivy fs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Trivy fs - CVE HIGH/CRITICAL corrigibles
+        shell: bash
+        run: |
+          # --include-dev-deps : React, Vite, etc. sont en devDependencies mais
+          # sont embarqués dans le bundle servi aux navigateurs.
+          docker run --rm -v "$PWD:/repo" -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" fs \
+            --scanners vuln --include-dev-deps \
+            --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-dirs /repo/node_modules \
+            /repo 2>&1 | tee trivy-deps.txt
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-deps-report
+          path: trivy-deps.txt
+          if-no-files-found: ignore
+
+  # 4/5 - Analyse des fichiers de déploiement (IaC : Dockerfile, puis manifestes Kubernetes)
+  iac:
+    name: IaC (Trivy config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Trivy config - mauvaises configurations HIGH/CRITICAL
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/repo" -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" config \
+            --severity HIGH,CRITICAL --exit-code 1 \
+            --skip-dirs /repo/node_modules --skip-dirs /repo/database \
+            /repo 2>&1 | tee trivy-iac.txt
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-iac-report
+          path: trivy-iac.txt
+          if-no-files-found: ignore
+
+  # 5/5 - Analyse des images de conteneur (vulnérabilités + secrets)
+  image:
+    name: Images (Trivy image)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Construire l'image
+        run: docker build -f Dockerfile.${{ matrix.component }} -t docvault-${{ matrix.component }}:ci .
+      - name: Trivy image - CVE HIGH/CRITICAL corrigibles et secrets
+        shell: bash
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" image \
+            --scanners vuln,secret --image-config-scanners secret \
+            --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 \
+            docvault-${{ matrix.component }}:ci 2>&1 | tee trivy-image-${{ matrix.component }}.txt
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-${{ matrix.component }}-report
+          path: trivy-image-${{ matrix.component }}.txt
           if-no-files-found: ignore
