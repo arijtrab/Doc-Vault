@@ -8,8 +8,26 @@ permissions:
   contents: read
 
 jobs:
-  hello:
+  gitleaks:
+    name: Secrets (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - name: Hello
-        run: echo "Pipeline DocVault OK"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gitleaks - historique complet, valeurs masquees
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/repo" \
+            zricethezav/gitleaks:latest detect \
+            --source /repo --redact --exit-code 1 \
+            --report-format json --report-path /repo/gitleaks.json
+
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks.json
+          if-no-files-found: ignore
