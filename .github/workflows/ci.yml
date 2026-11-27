@@ -43,7 +43,7 @@ jobs:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
     container:
-      image: semgrep/semgrep:latest   # à épingler : remplacer latest par la version affichée par "semgrep --version"
+      image: semgrep/semgrep:1.186.0
     steps:
       - uses: actions/checkout@v4
         with:
