@@ -8,3 +8,4 @@ coverage/
 !.env.example
 database/data/*.db
 database/data/*.db-*
+preuves/
