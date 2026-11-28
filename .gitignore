@@ -9,3 +9,4 @@ coverage/
 database/data/*.db
 database/data/*.db-*
 preuves/
+secrets/
