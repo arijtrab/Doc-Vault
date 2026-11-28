@@ -5,6 +5,10 @@ import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
 import adminRoutes from './routes/admin.js';
 import { db } from '../database/db.js';
+import { loadMasterKey } from '../security/runtimeKeys.js';
+
+// 4.4: the master key is supplied at runtime (mounted secret file); startup fails without it.
+const masterKey = loadMasterKey();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -38,6 +42,7 @@ app.get('/api/health', (_req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`\n🛡️  DocVault API Server running on http://localhost:${PORT}`);
   console.log(`📊 Database: SQLite (${process.env.DOCVAULT_DB_PATH || 'database/data/docvault.db'})`);
+  console.log(`🔑 Master key: version ${masterKey.version}, fingerprint ${masterKey.fingerprint} (value never logged)`);
   console.log(`🔗 Health: http://localhost:${PORT}/api/health\n`);
 });
 

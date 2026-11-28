@@ -12,6 +12,11 @@ services:
       DOCVAULT_DOCKER_LAB: "true"
       DOCVAULT_DB_PATH: /data/docvault.db
       APP_URL: http://127.0.0.1:8080
+      # 4.4: the key is read from a mounted file, never passed as a plain environment value.
+      DOCVAULT_MASTER_KEY_FILE: /run/secrets/docvault_master_key
+      DOCVAULT_MASTER_KEY_VERSION: v1
+    secrets:
+      - docvault_master_key
     volumes:
       - docvault-data:/data
     healthcheck:
@@ -58,6 +63,12 @@ services:
     mem_limit: 128m
     pids_limit: 64
     cpus: 0.5
+
+secrets:
+  docvault_master_key:
+    # Local file, ignored by Git (see .gitignore). Generate it with:
+    #   openssl rand -hex 32 > secrets/docvault_master_key
+    file: ./secrets/docvault_master_key
 
 volumes:
   docvault-data:
